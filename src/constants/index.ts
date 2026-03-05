@@ -1,13 +1,20 @@
 import pc from "picocolors";
 import { Formatter } from "picocolors/types";
-import { Framework, Variant } from "../types/index.type";
+import { EditorChoice, Framework, Variant } from "../types/index.type";
 
 export const frameworkList = ["Vue", "React", "Vanilla"] as const;
 export const variantList = ["TypeScript", "JavaScript"] as const;
+export const styleSchemeList = ["CSS", "SCSS"] as const;
+export const enhancementList = ["Tailwind CSS v4.0", "Oxfmt", "Oxlint", "Pinia (Persisted)", "Env Config"] as const;
 
 export const variantMap: Record<Variant, string> = {
   TypeScript: "ts",
   JavaScript: "js",
+};
+
+export const styleSchemeMap: Record<string, string> = {
+  CSS: "css",
+  SCSS: "scss",
 };
 
 export const frameworkMap: Record<Framework, string> = {
@@ -34,3 +41,12 @@ export const frameworkIcon: Record<Framework, { icon: string; color: Formatter }
     color: pc.yellow,
   },
 };
+
+export const EDITORS: EditorChoice[] = [
+  { title: "VS Code", value: "vscode", command: "code" },
+  { title: "Cursor", value: "cursor", command: "cursor" },
+  { title: "Kiro", value: "kiro", command: "kiro" },
+  { title: "Trae", value: "trae", command: "trae" },
+  { title: "WebStorm", value: "webstorm", command: "wstorm" },
+  { title: "Other", value: "other", command: "" },
+];

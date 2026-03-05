@@ -4,17 +4,39 @@ import ora from "ora";
 import path from "path";
 import pc from "picocolors";
 import prompts from "prompts";
-import { frameworkList, variantList } from "../../constants";
-import { CreateCommandOption } from "../../types/index.type";
+import { EDITORS, enhancementList, frameworkList, styleSchemeList, variantList } from "../../constants";
+import { CreateCommandOption, EditorChoice, Enhancement } from "../../types/index.type";
 import { loadTemplate } from "../../utils/load";
 import { consolaInstance } from "../../utils/logger";
 import { isValidFramework, isValidVariant } from "../../utils/validate";
+
+const detectInstalledEditors = async (): Promise<EditorChoice[]> => {
+  const installed: EditorChoice[] = [];
+
+  for (const editor of EDITORS) {
+    if (editor.command === "") {
+      continue;
+    }
+    try {
+      await execa("which", [editor.command], { stdio: "ignore" });
+      installed.push(editor);
+    } catch {
+      // Editor not installed
+    }
+  }
+
+  // Always add "Other" option
+  installed.push(EDITORS[EDITORS.length - 1]);
+
+  return installed;
+};
 
 export const createProjectCommand = () => {
   return new Command("create")
     .argument("[project-name]")
     .option("-f, --framework <framework>", "framework")
     .option("-t, --variant <variant>", "variant")
+    .option("-s, --style <style>", "style scheme (css/scss)")
     .option("-r, --remote <remote>", "remote template")
     .description("Create a new project from template")
     .helpOption("-h, --help", "Display help for a command")
@@ -26,12 +48,12 @@ export const createProjectCommand = () => {
           type: "text",
           name: "name",
           message: "Project name:",
-          initial: defaultName,  
+          initial: defaultName,
         })
         projectName = res.name || defaultName;
       }
 
-      let { framework, variant, remote } = option;
+      let { framework, variant, styleScheme, remote } = option;
 
       if (remote) {
         // 加载模板
@@ -72,24 +94,53 @@ export const createProjectCommand = () => {
         variant = response.variant;
       }
 
+      // 选择样式方案
+      if (!styleScheme) {
+        const response = await prompts({
+          type: "select",
+          name: "styleScheme",
+          message: "Select a style scheme:",
+          choices: styleSchemeList.map((s) => ({
+            title: s,
+            value: s,
+          })),
+          initial: 0,
+        });
+        styleScheme = response.styleScheme;
+      }
+
+      // 选择项目增强选项（支持多选）
+      const { enhancements } = await prompts({
+        type: "multiselect",
+        name: "enhancements",
+        message: "Select project enhancements (optional):",
+        choices: enhancementList.map((e) => ({
+          title: e,
+          value: e,
+        })),
+        instructions: pc.dim("Use ↑↓ to navigate · Space to select · Enter to confirm"),
+      });
+
       // 加载模板
       await loadTemplate({
         projectName,
         framework,
         variant,
+        styleScheme,
+        enhancements: enhancements as Enhancement[],
       });
 
-      await installDependencies(projectName);
+      await installDependencies(projectName, enhancements as Enhancement[]);
     });
 };
 
-const installDependencies = async (projectName: string) => {
+const installDependencies = async (projectName: string, enhancements: Enhancement[] = []) => {
   const projectPath = path.join(process.cwd(), projectName);
 
   const {shouldInstall} = await prompts({
     type: 'confirm',
     name: "shouldInstall",
-    message: "Install dependencies and start now?",
+    message: "Install dependencies now?",
     initial: true
   });
 
@@ -118,10 +169,106 @@ const installDependencies = async (projectName: string) => {
       await execa(packageManager, ["install"], { cwd: projectPath, stdio: "ignore" });
     }
     spinner.succeed(pc.green("Dependencies installed successfully"));
-    if (packageManager === "yarn") {
-      await execa(packageManager, ["dev"], { cwd: projectPath, stdio: "inherit" });
+
+    // 如果选择了 Oxfmt，静默执行一次 fmt
+    if (enhancements.includes("Oxfmt")) {
+      try {
+        if (packageManager === "yarn") {
+          await execa(packageManager, ["fmt"], { cwd: projectPath, stdio: "ignore" });
+        } else {
+          await execa(packageManager, ["run", "fmt"], { cwd: projectPath, stdio: "ignore" });
+        }
+      } catch {
+        // 静默失败，不影响后续流程
+      }
+    }
+
+    // 安装完成后，检查是否安装了 Claude Code
+    let hasClaudeCode = false;
+    try {
+      await execa("which", ["claude"], { stdio: "ignore" });
+      hasClaudeCode = true;
+    } catch {
+      // Claude Code not installed
+    }
+
+    // 构建 action 选项
+    const actionChoices = [
+      { title: "Open in editor", value: "editor" },
+      { title: "Run the project", value: "run" },
+    ];
+
+    // 如果安装了 Claude Code，添加选项
+    if (hasClaudeCode) {
+      actionChoices.splice(1, 0, { title: "Open with Claude Code", value: "claude" });
+    }
+
+    // 安装完成后，让用户选择下一步操作
+    const { action } = await prompts({
+      type: "select",
+      name: "action",
+      message: "What would you like to do next?",
+      choices: actionChoices,
+      initial: 0,
+    });
+
+    if (action === "claude") {
+      // 使用 Claude Code 打开项目
+      try {
+        await execa("claude", [projectPath], { stdio: "inherit" });
+        consolaInstance.log(pc.cyan(`\nProject opened with Claude Code: ${projectPath}`));
+      } catch (err) {
+        consolaInstance.error(pc.red("Failed to open Claude Code"));
+      }
+    } else if (action === "editor") {
+      // 检测已安装的编辑器
+      const installedEditors = await detectInstalledEditors();
+
+      const { editor } = await prompts({
+        type: "select",
+        name: "editor",
+        message: "Select an editor to open the project:",
+        choices: installedEditors.map((e) => ({
+          title: e.title,
+          value: e.value,
+        })),
+      });
+
+      if (editor === "other") {
+        const { customEditor } = await prompts({
+          type: "text",
+          name: "customEditor",
+          message: "Enter the editor command (e.g., vim, nano):",
+        });
+
+        if (customEditor) {
+          try {
+            await execa(customEditor, [projectPath], { stdio: "inherit" });
+          } catch (err) {
+            consolaInstance.error(pc.red(`Failed to open ${customEditor}`));
+          }
+        }
+      } else {
+        const selectedEditor = installedEditors.find((e) => e.value === editor);
+        if (selectedEditor && selectedEditor.command) {
+          try {
+            await execa(selectedEditor.command, [projectPath], { stdio: "inherit" });
+          } catch (err) {
+            consolaInstance.error(pc.red(`Failed to open ${selectedEditor.title}`));
+          }
+        }
+      }
+
+      consolaInstance.log(pc.cyan(`\nProject created at: ${projectPath}`));
+      consolaInstance.log(pc.yellow(`To run the project later, cd ${projectName} and run ${packageManager} run dev`));
     } else {
-      await execa(packageManager, ["run", "dev"], { cwd: projectPath, stdio: "inherit" });
+      // 直接运行项目
+      consolaInstance.log(pc.cyan(`\nRunning ${packageManager} run dev...\n`));
+      if (packageManager === "yarn") {
+        await execa(packageManager, ["dev"], { cwd: projectPath, stdio: "inherit" });
+      } else {
+        await execa(packageManager, ["run", "dev"], { cwd: projectPath, stdio: "inherit" });
+      }
     }
   } catch (err) {
     spinner.fail(pc.red("❌ Failed to install dependencies"));

@@ -16,7 +16,7 @@ export const listCommand = () => {
       const templateDirPath = path.join(__dirname, "..", "templates");
       const templateList: string[] = fs.readdirSync(templateDirPath);
       consolaInstance.log(
-        pc.green(pc.bold("🍑 Peach CLI — Available Templates: "))
+        pc.green(pc.bold("🍑 Create-Peach — Available Templates: "))
       );
 
       const obj: Record<Framework, string[]> = templateList.reduce(

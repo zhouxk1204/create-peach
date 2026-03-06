@@ -8,10 +8,10 @@ import { registerCommand } from "./register-command";
 // -v
 program
   .name('peach')
-  .version(pkg.version, '-v, --version', 'Show Peach CLI information')
+  .version(pkg.version, '-v, --version', 'Show Create-Peach information')
   // .addHelpText(
   //   'beforeAll',
-  //   picocolors.green('\n🍑 Peach CLI - Efficient frontend project scaffolding tool\n')
+  //   picocolors.green('\n🍑 Create-Peach - Efficient frontend project scaffolding tool\n')
   // )
   // .addHelpText(
   //   'afterAll',

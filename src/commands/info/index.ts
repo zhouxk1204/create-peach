@@ -19,7 +19,7 @@ function getPnpmVersion(): string {
 
 export const infoCommand = () => {
   return new Command("info")
-    .description("display peach-cli information")
+    .description("display Create-Peach information")
     .action(() => {
       // Print gradient ASCII logo
       consolaInstance.log(
@@ -38,7 +38,7 @@ export const infoCommand = () => {
       );
 
       // CLI title
-      consolaInstance.log(pc.green(pc.bold(`\n🍑 Peach CLI v${version}`)));
+      consolaInstance.log(pc.green(pc.bold(`\n🍑 Create-Peach v${version}`)));
       consolaInstance.log(pc.gray("----------------------------------\n"));
 
       // System information

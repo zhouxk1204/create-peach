@@ -29,7 +29,7 @@ pnpm add -g peach-cli
 ### Create a new project
 
 ```bash
-peach-cli create my-app
+peach create my-app
 ```
 
 ### Framework choices
@@ -48,9 +48,9 @@ peach-cli create my-app
 ## 🛠 CLI Commands
 
 ```bash
-peach-cli -h              # Show help
-peach-cli create <name>   # Create a new project
-peach-cli --version       # Show version
+peach -h              # Show help
+peach create <name>   # Create a new project
+peach --version       # Show version
 ```
 
 ## 📦 Supported templates

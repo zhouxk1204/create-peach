@@ -15,7 +15,7 @@ program
   // )
   // .addHelpText(
   //   'afterAll',
-  //   picocolors.yellow('\nFor more information, visit https://github.com/zhouxk1204/peach-cli\n')
+  //   picocolors.yellow('\nFor more information, visit https://github.com/zhouxk1204/create-peach\n')
   // );
 
 // register info command

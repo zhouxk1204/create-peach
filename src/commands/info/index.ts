@@ -50,7 +50,7 @@ export const infoCommand = () => {
       );
       consolaInstance.log(
         pc.green("GitHub:"),
-        pc.underline(pc.blue("https://github.com/zhouxk1204/peach-cli"))
+        pc.underline(pc.blue("https://github.com/zhouxk1204/create-peach"))
       );
 
       // // Supported frameworks

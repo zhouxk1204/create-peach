@@ -1,3 +1,4 @@
+import { execa } from "execa";
 import {
   copy,
   mkdir,
@@ -10,7 +11,9 @@ import {
   writeJson
 } from "fs-extra";
 import { downloadTemplate } from "giget";
+import ora from "ora";
 import path, { dirname } from "path";
+import pc from "picocolors";
 import { fileURLToPath } from "url";
 import { frameworkMap, variantMap } from "../constants";
 import {
@@ -19,6 +22,7 @@ import {
   StyleScheme,
   Variant,
 } from "../types/index.type";
+import { consolaInstance } from "./logger";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -85,6 +89,9 @@ const loadLocalTemplate = async (option: LoadLocalTemplateOption) => {
   if (enhancements.length > 0) {
     await applyEnhancements(projectName, enhancements, styleScheme, variant);
   }
+
+  // 更新 App.vue 中的 featureCards
+  await updateAppVueFeatureCards(projectName, framework, variant, enhancements);
 };
 
 const loadRemoteTemplate = async (option: LoadRemoteTemplateOption) => {
@@ -273,7 +280,119 @@ const applyEnhancements = async (
       await applyPinia(projectName, variant);
     } else if (enhancement === "Env Config") {
       await applyEnvConfig(projectName, variant);
+    } else if (enhancement === "AI Ready") {
+      await applyAIReady(projectName, enhancements);
     }
+  }
+};
+
+const updateAppVueFeatureCards = async (
+  projectName: string,
+  framework: Framework,
+  variant: Variant,
+  enhancements: Enhancement[],
+) => {
+  // 只处理 Vue 项目
+  if (framework !== "Vue") {
+    return;
+  }
+
+  const projectRootPath = `${process.cwd()}/${projectName}`;
+  const appVuePath = path.join(projectRootPath, "src", "App.vue");
+
+  try {
+    let content = await readFile(appVuePath, "utf-8");
+
+    // 提取现有的 featureCards 数组
+    const existingCardsMatch = content.match(/const featureCards = \[([\s\S]*?)\]/);
+    if (!existingCardsMatch) {
+      return; // 找不到 featureCards，跳过
+    }
+
+    // 构建要添加的新卡片数组
+    const newCards = [];
+
+    // 根据选择的增强选项添加卡片
+    if (enhancements.includes("Tailwind CSS v4.0")) {
+      newCards.push({
+        icon: "🎨",
+        title: "Tailwind CSS v4",
+        desc: "原子化 CSS，快速构建现代化 UI",
+        bg: "linear-gradient(to bottom right,#ffffff,#faf5ff)",
+        titleGradient: "linear-gradient(to right,#9333ea,#2563eb)",
+      });
+    }
+
+    // 如果是 TypeScript，添加 TypeScript 卡片
+    if (variant === "TypeScript") {
+      newCards.push({
+        icon: "📘",
+        title: "TypeScript",
+        desc: "完整类型支持，更安全的代码",
+        bg: "linear-gradient(to bottom right,#ffffff,#eff6ff)",
+        titleGradient: "linear-gradient(to right,#2563eb,#0891b2)",
+      });
+    }
+
+    // 如果选择了 Oxfmt 或 Oxlint，添加 OXC 卡片
+    if (enhancements.includes("Oxfmt") || enhancements.includes("Oxlint")) {
+      newCards.push({
+        icon: "🦀",
+        title: "OXC 支持",
+        desc: "基于 Rust 的超高速工具链",
+        bg: "linear-gradient(to bottom right,#ffffff,#fff7ed)",
+        titleGradient: "linear-gradient(to right,#ea580c,#dc2626)",
+      });
+    }
+
+    // 如果选择了 Pinia，添加 Pinia 卡片
+    if (enhancements.includes("Pinia (Persisted)")) {
+      newCards.push({
+        icon: "🍍",
+        title: "Pinia",
+        desc: "Vue 官方推荐的状态管理",
+        bg: "linear-gradient(to bottom right,#ffffff,#fefce8)",
+        titleGradient: "linear-gradient(to right,#ca8a04,#16a34a)",
+      });
+    }
+
+    // 如果选择了 AI Ready，添加 AI Ready 卡片
+    if (enhancements.includes("AI Ready")) {
+      newCards.push({
+        icon: "🤖",
+        title: "AI Ready",
+        desc: "集成 Vue Skills 和 CLAUDE.md",
+        bg: "linear-gradient(to bottom right,#ffffff,#f0f9ff)",
+        titleGradient: "linear-gradient(to right,#0ea5e9,#8b5cf6)",
+      });
+    }
+
+    // 如果没有新卡片要添加，直接返回
+    if (newCards.length === 0) {
+      return;
+    }
+
+    // 将新卡片转换为字符串格式
+    const newCardsString = newCards.map(card => 
+      `  ${JSON.stringify(card, null, 2).replace(/\n/g, '\n  ')}`
+    ).join(',\n');
+
+    // 在现有数组的最后一个元素后添加新卡片
+    // 匹配最后一个 } 或 }, 后面跟着 ]
+    content = content.replace(
+      /const featureCards = \[([\s\S]*?)\n\]/,
+      (match, existingContent) => {
+        // 移除末尾的逗号和空白
+        const trimmedContent = existingContent.trimEnd();
+        // 添加逗号（如果还没有）和新卡片
+        const needsComma = !trimmedContent.endsWith(',');
+        return `const featureCards = [${existingContent}${needsComma ? ',' : ''}\n${newCardsString}\n]`;
+      }
+    );
+
+    await writeFile(appVuePath, content);
+  } catch {
+    // 文件不存在或修改失败，静默处理
   }
 };
 
@@ -720,10 +839,10 @@ const updateHelloWorldWithPinia = async (projectRootPath: string) => {
       "const counterStore = useCounterStore()",
     );
 
-    // 替换按钮中的 count
+    // 替换按钮中的 count（支持多行匹配）
     content = content.replace(
-      /<button\s+type="button"\s+@click="count\+\+">count is {{ count }}<\/button>/,
-      '<button type="button" @click="counterStore.increment()">count is {{ counterStore.count }}</button>',
+      /<button\s+type="button"\s+@click="count\+\+">\s*count is {{ count }}\s*<\/button>/s,
+      '<button type="button" @click="counterStore.increment()">\n        count is {{ counterStore.count }}\n      </button>',
     );
 
     await writeFile(helloWorldPath, content);
@@ -753,7 +872,7 @@ const applyEnvConfig = async (projectName: string, variant: Variant) => {
     const viteEnvPath = path.join(projectRootPath, "src", "vite-env.d.ts");
     try {
       let content = await readFile(viteEnvPath, "utf-8");
-      
+
       // 检查是否已经有 ImportMetaEnv 定义
       if (!content.includes("interface ImportMetaEnv")) {
         content += `
@@ -784,4 +903,295 @@ interface ImportMeta {
   packageJson.scripts["build:prod"] = "vite build --mode production";
 
   await writeJson(packageJsonPath, packageJson, { spaces: 2 });
+};
+
+
+const applyAIReady = async (projectName: string, enhancements: Enhancement[]) => {
+  const projectRootPath = `${process.cwd()}/${projectName}`;
+  const spinner = ora("Configuring project enhancements...").start();
+
+  try {
+    // 1. 生成 CLAUDE.md 文件
+    await generateClaudeMd(projectRootPath, projectName, enhancements);
+
+    // 2. 添加 Vue skills
+    await addVueSkills(projectRootPath, enhancements);
+    
+    spinner.succeed(pc.green("Project enhancements configured successfully"));
+  } catch (err) {
+    spinner.fail(pc.red("Failed to configure enhancements"));
+    consolaInstance.warn(pc.yellow("⚠ You can set up additional features manually later"));
+  }
+};
+
+const generateClaudeMd = async (
+  projectRootPath: string,
+  projectName: string,
+  enhancements: Enhancement[]
+) => {
+  // 读取 package.json 获取项目信息
+  const packageJsonPath = path.join(projectRootPath, "package.json");
+  const packageJson = await readJson(packageJsonPath);
+
+  // 提取项目信息
+  const dependencies = packageJson.dependencies || {};
+  const devDependencies = packageJson.devDependencies || {};
+  const scripts = packageJson.scripts || {};
+
+  // 判断框架和技术栈
+  const isVue = dependencies.vue || devDependencies.vue;
+  const isReact = dependencies.react || devDependencies.react;
+  const isTailwind = enhancements.includes("Tailwind CSS v4.0");
+  const isPinia = enhancements.includes("Pinia (Persisted)");
+  const isTypeScript = devDependencies.typescript;
+  const isOxfmt = enhancements.includes("Oxfmt");
+  const isOxlint = enhancements.includes("Oxlint");
+
+  // 构建技术栈列表
+  const techStack = [];
+  if (isVue) techStack.push("Vue 3");
+  if (isReact) techStack.push("React");
+  if (isTypeScript) techStack.push("TypeScript");
+  else techStack.push("JavaScript");
+  techStack.push("Vite");
+  if (isTailwind) techStack.push("Tailwind CSS v4");
+  if (isPinia) techStack.push("Pinia (with persistence)");
+  if (isOxfmt) techStack.push("Oxfmt (Rust-based formatter)");
+  if (isOxlint) techStack.push("Oxlint (Rust-based linter)");
+
+  // 生成 CLAUDE.md 内容
+  const claudeMdContent = `# ${projectName}
+
+This project was created with [create-peach](https://github.com/zhouxk1204/create-peach), a lightweight CLI tool for scaffolding modern web projects.
+
+## 🎯 Project Overview
+
+A modern web application built with ${techStack.slice(0, 2).join(" and ")}.
+
+## 🛠️ Tech Stack
+
+${techStack.map((tech) => `- ${tech}`).join("\n")}
+
+## 📁 Project Structure
+
+\`\`\`
+${projectName}/
+├── src/
+│   ├── assets/          # Static assets (images, icons, etc.)
+│   ├── components/      # Reusable components
+${isPinia ? "│   ├── stores/         # Pinia state management stores\n" : ""}${isVue ? "│   ├── App.vue          # Root component\n" : ""}${isReact ? "│   ├── App.jsx/tsx      # Root component\n" : ""}│   └── main.${isTypeScript ? "ts" : "js"}          # Application entry point
+├── public/              # Public static files
+${isTailwind ? "├── tailwind.css        # Tailwind CSS imports\n" : ""}${isOxfmt ? "├── .oxfmtrc.jsonc      # Oxfmt configuration\n" : ""}${isOxlint ? "├── .oxlintrc.json      # Oxlint configuration\n" : ""}├── index.html           # HTML entry point
+├── vite.config.${isTypeScript ? "ts" : "js"}     # Vite configuration
+${isTypeScript ? "├── tsconfig.json       # TypeScript configuration\n" : ""}└── package.json         # Project dependencies and scripts
+\`\`\`
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- Node.js (v16 or higher)
+- npm/yarn/pnpm package manager
+
+### Installation
+
+Install dependencies:
+
+\`\`\`bash
+npm install
+# or
+yarn install
+# or
+pnpm install
+\`\`\`
+
+### Development
+
+Start the development server:
+
+\`\`\`bash
+npm run dev
+\`\`\`
+
+The application will be available at \`http://localhost:5173\`
+
+### Build
+
+Build for production:
+
+\`\`\`bash
+npm run build
+\`\`\`
+
+### Preview
+
+Preview the production build:
+
+\`\`\`bash
+npm run preview
+\`\`\`
+
+## 📜 Available Scripts
+
+${Object.entries(scripts)
+        .map(([name, command]) => `- \`npm run ${name}\` - ${command}`)
+        .join("\n")}
+
+## 🎨 Key Features
+
+${isVue ? "- **Vue 3 Composition API**: Modern reactive framework with script setup syntax\n" : ""}${isReact ? "- **React 18**: Modern React with hooks and functional components\n" : ""}${isTailwind ? "- **Tailwind CSS v4**: Utility-first CSS framework for rapid UI development\n" : ""}${isPinia ? "- **Pinia State Management**: Vue official state management with persistence\n" : ""}${isTypeScript ? "- **TypeScript**: Full type safety and better developer experience\n" : ""}${isOxfmt ? "- **Oxfmt**: Lightning-fast Rust-based code formatter\n" : ""}${isOxlint ? "- **Oxlint**: Ultra-fast Rust-based linter for better code quality\n" : ""}- **Vite**: Next-generation frontend tooling with instant HMR
+- **Modern Development**: Hot Module Replacement (HMR) for instant feedback
+
+## 💡 Development Tips
+
+${isVue
+        ? `### Vue 3 Best Practices
+
+- Use Composition API with \`<script setup>\` for cleaner code
+- Leverage Vue's reactivity system with \`ref\` and \`reactive\`
+- Keep components small and focused on a single responsibility
+${isPinia ? "- Use Pinia stores for shared state across components\n" : ""}
+`
+        : ""
+      }${isReact
+        ? `### React Best Practices
+
+- Use functional components with hooks
+- Keep components pure and predictable
+- Leverage React's built-in hooks (useState, useEffect, etc.)
+- Consider component composition over inheritance
+
+`
+        : ""
+      }${isTailwind
+        ? `### Tailwind CSS
+
+- Use utility classes for rapid prototyping
+- Create custom components for repeated patterns
+- Leverage Tailwind's responsive design utilities
+- Use \`@apply\` directive for complex component styles
+
+`
+        : ""
+      }${isTypeScript
+        ? `### TypeScript
+
+- Define interfaces for component props and data structures
+- Use type inference where possible
+- Leverage IDE autocomplete for better productivity
+- Enable strict mode for maximum type safety
+
+`
+        : ""
+      }${isOxfmt
+        ? `### Code Formatting
+
+Run Oxfmt to format your code:
+
+\`\`\`bash
+npm run fmt
+\`\`\`
+
+Check formatting without making changes:
+
+\`\`\`bash
+npm run fmt:check
+\`\`\`
+
+`
+        : ""
+      }${isOxlint
+        ? `### Linting
+
+Run Oxlint to check for issues:
+
+\`\`\`bash
+npm run lint
+\`\`\`
+
+Auto-fix issues where possible:
+
+\`\`\`bash
+npm run lint:fix
+\`\`\`
+
+`
+        : ""
+      }### Vite Configuration
+
+- Vite config is located in \`vite.config.${isTypeScript ? "ts" : "js"}\`
+- Add plugins, aliases, and build options as needed
+- Vite supports environment variables via \`.env\` files
+
+## 🔗 Useful Resources
+
+${isVue
+        ? `- [Vue 3 Documentation](https://vuejs.org/)
+- [Vue 3 Composition API](https://vuejs.org/guide/extras/composition-api-faq.html)
+`
+        : ""
+      }${isReact
+        ? `- [React Documentation](https://react.dev/)
+- [React Hooks](https://react.dev/reference/react)
+`
+        : ""
+      }${isTailwind ? "- [Tailwind CSS Documentation](https://tailwindcss.com/docs)\n" : ""}${isPinia ? "- [Pinia Documentation](https://pinia.vuejs.org/)\n" : ""}${isTypeScript ? "- [TypeScript Documentation](https://www.typescriptlang.org/docs/)\n" : ""}- [Vite Documentation](https://vitejs.dev/)
+${isOxfmt ? "- [Oxfmt Documentation](https://oxc.rs/docs/guide/usage/formatter.html)\n" : ""}${isOxlint ? "- [Oxlint Documentation](https://oxc.rs/docs/guide/usage/linter.html)\n" : ""}- [create-peach GitHub](https://github.com/zhouxk1204/create-peach)
+
+## 📝 Notes for Claude
+
+- This is a fresh project scaffold with minimal boilerplate
+- Feel free to modify the structure to fit your needs
+- All dependencies are modern and actively maintained
+- The project follows current best practices for ${isVue ? "Vue" : isReact ? "React" : "web"} development
+${isTailwind ? "- Tailwind CSS is configured and ready to use\n" : ""}${isPinia ? "- Pinia stores support persistence out of the box\n" : ""}${isOxfmt || isOxlint ? "- OXC tools provide blazing-fast formatting and linting\n" : ""}- Hot Module Replacement (HMR) is enabled for instant feedback during development
+
+---
+
+Created with ❤️ using [create-peach](https://github.com/zhouxk1204/create-peach)
+`;
+
+  // 写入 CLAUDE.md 文件
+  const claudeMdPath = path.join(projectRootPath, "CLAUDE.md");
+  await writeFile(claudeMdPath, claudeMdContent);
+};
+
+const addVueSkills = async (
+  projectRootPath: string,
+  enhancements: Enhancement[]
+) => {
+  // 读取 package.json 判断是否是 Vue 项目
+  const packageJsonPath = path.join(projectRootPath, "package.json");
+  const packageJson = await readJson(packageJsonPath);
+  const dependencies = packageJson.dependencies || {};
+  const devDependencies = packageJson.devDependencies || {};
+  const isVue = dependencies.vue || devDependencies.vue;
+
+  if (!isVue) {
+    return; // 不是 Vue 项目，跳过
+  }
+
+  // 构建 skills 列表
+  const skills = ["vue-best-practices"];
+  const isPinia = enhancements.includes("Pinia (Persisted)");
+  if (isPinia) {
+    skills.push("vue-pinia-best-practices");
+  }
+
+  // 执行 npx skills add 命令
+  const args = [
+    "skills",
+    "add",
+    "vuejs-ai/skills",
+    "--skill",
+    ...skills,
+    "--agent",
+    "claude-code",
+    "-y"
+  ];
+  
+  await execa("npx", args, {
+    cwd: projectRootPath,
+    stdio: "ignore",
+  });
 };

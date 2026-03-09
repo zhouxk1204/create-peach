@@ -146,6 +146,9 @@ const installDependencies = async (projectName: string, enhancements: Enhancemen
 
   if(!shouldInstall){
     consolaInstance.log(pc.yellow("You can install dependencies later by running npm/yarn/pnpm install"));
+    
+    // 即使不安装依赖，也提供打开项目的选项
+    await showActionChoices(projectPath, projectName);
     return;
   }
 
@@ -183,86 +186,107 @@ const installDependencies = async (projectName: string, enhancements: Enhancemen
       }
     }
 
-    // 安装完成后，检查是否安装了 Claude Code
-    let hasClaudeCode = false;
+    await showActionChoices(projectPath, projectName, packageManager);
+  } catch (err) {
+    spinner.fail(pc.red("❌ Failed to install dependencies"));
+    console.error(err);
+  }
+}
+
+const showActionChoices = async (projectPath: string, projectName: string, packageManager?: string) => {
+  // 安装完成后，检查是否安装了 Claude Code
+  let hasClaudeCode = false;
+  try {
+    await execa("which", ["claude"], { stdio: "ignore" });
+    hasClaudeCode = true;
+  } catch {
+    // Claude Code not installed
+  }
+
+  // 构建 action 选项
+  const actionChoices = [
+    { title: "Open in editor", value: "editor" },
+    { title: "Run the project", value: "run" },
+  ];
+
+  // 如果安装了 Claude Code，添加选项
+  if (hasClaudeCode) {
+    actionChoices.splice(1, 0, { title: "Open with Claude Code", value: "claude" });
+  }
+
+  // 如果没有安装依赖，移除运行项目的选项
+  if (!packageManager) {
+    const runIndex = actionChoices.findIndex(choice => choice.value === "run");
+    if (runIndex !== -1) {
+      actionChoices.splice(runIndex, 1);
+    }
+  }
+
+  // 让用户选择下一步操作
+  const { action } = await prompts({
+    type: "select",
+    name: "action",
+    message: "What would you like to do next?",
+    choices: actionChoices,
+    initial: 0,
+  });
+
+  if (action === "claude") {
+    // 使用 Claude Code 打开项目
     try {
-      await execa("which", ["claude"], { stdio: "ignore" });
-      hasClaudeCode = true;
-    } catch {
-      // Claude Code not installed
+      await execa("claude", [projectPath], { stdio: "inherit" });
+      consolaInstance.log(pc.cyan(`\nProject opened with Claude Code: ${projectPath}`));
+    } catch (err) {
+      consolaInstance.error(pc.red("Failed to open Claude Code"));
     }
+  } else if (action === "editor") {
+    // 检测已安装的编辑器
+    const installedEditors = await detectInstalledEditors();
 
-    // 构建 action 选项
-    const actionChoices = [
-      { title: "Open in editor", value: "editor" },
-      { title: "Run the project", value: "run" },
-    ];
-
-    // 如果安装了 Claude Code，添加选项
-    if (hasClaudeCode) {
-      actionChoices.splice(1, 0, { title: "Open with Claude Code", value: "claude" });
-    }
-
-    // 安装完成后，让用户选择下一步操作
-    const { action } = await prompts({
+    const { editor } = await prompts({
       type: "select",
-      name: "action",
-      message: "What would you like to do next?",
-      choices: actionChoices,
-      initial: 0,
+      name: "editor",
+      message: "Select an editor to open the project:",
+      choices: installedEditors.map((e) => ({
+        title: e.title,
+        value: e.value,
+      })),
     });
 
-    if (action === "claude") {
-      // 使用 Claude Code 打开项目
-      try {
-        await execa("claude", [projectPath], { stdio: "inherit" });
-        consolaInstance.log(pc.cyan(`\nProject opened with Claude Code: ${projectPath}`));
-      } catch (err) {
-        consolaInstance.error(pc.red("Failed to open Claude Code"));
-      }
-    } else if (action === "editor") {
-      // 检测已安装的编辑器
-      const installedEditors = await detectInstalledEditors();
-
-      const { editor } = await prompts({
-        type: "select",
-        name: "editor",
-        message: "Select an editor to open the project:",
-        choices: installedEditors.map((e) => ({
-          title: e.title,
-          value: e.value,
-        })),
+    if (editor === "other") {
+      const { customEditor } = await prompts({
+        type: "text",
+        name: "customEditor",
+        message: "Enter the editor command (e.g., vim, nano):",
       });
 
-      if (editor === "other") {
-        const { customEditor } = await prompts({
-          type: "text",
-          name: "customEditor",
-          message: "Enter the editor command (e.g., vim, nano):",
-        });
-
-        if (customEditor) {
-          try {
-            await execa(customEditor, [projectPath], { stdio: "inherit" });
-          } catch (err) {
-            consolaInstance.error(pc.red(`Failed to open ${customEditor}`));
-          }
-        }
-      } else {
-        const selectedEditor = installedEditors.find((e) => e.value === editor);
-        if (selectedEditor && selectedEditor.command) {
-          try {
-            await execa(selectedEditor.command, [projectPath], { stdio: "inherit" });
-          } catch (err) {
-            consolaInstance.error(pc.red(`Failed to open ${selectedEditor.title}`));
-          }
+      if (customEditor) {
+        try {
+          await execa(customEditor, [projectPath], { stdio: "inherit" });
+        } catch (err) {
+          consolaInstance.error(pc.red(`Failed to open ${customEditor}`));
         }
       }
+    } else {
+      const selectedEditor = installedEditors.find((e) => e.value === editor);
+      if (selectedEditor && selectedEditor.command) {
+        try {
+          await execa(selectedEditor.command, [projectPath], { stdio: "inherit" });
+        } catch (err) {
+          consolaInstance.error(pc.red(`Failed to open ${selectedEditor.title}`));
+        }
+      }
+    }
 
-      consolaInstance.log(pc.cyan(`\nProject created at: ${projectPath}`));
+    consolaInstance.log(pc.cyan(`\nProject created at: ${projectPath}`));
+    if (packageManager) {
       consolaInstance.log(pc.yellow(`To run the project later, cd ${projectName} and run ${packageManager} run dev`));
     } else {
-      // 直接运行项目
+      consolaInstance.log(pc.yellow(`To run the project, first install dependencies with npm/yarn/pnpm install, then run dev`));
+    }
+  } else if (action === "run") {
+    // 直接运行项目
+    if (packageManager) {
       consolaInstance.log(pc.cyan(`\nRunning ${packageManager} run dev...\n`));
       if (packageManager === "yarn") {
         await execa(packageManager, ["dev"], { cwd: projectPath, stdio: "inherit" });
@@ -270,8 +294,7 @@ const installDependencies = async (projectName: string, enhancements: Enhancemen
         await execa(packageManager, ["run", "dev"], { cwd: projectPath, stdio: "inherit" });
       }
     }
-  } catch (err) {
-    spinner.fail(pc.red("❌ Failed to install dependencies"));
-    console.error(err);
   }
 }
+
+

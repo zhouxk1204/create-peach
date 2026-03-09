@@ -5,7 +5,7 @@ import { EditorChoice, Framework, Variant } from "../types/index.type";
 export const frameworkList = ["Vue", "React", "Vanilla"] as const;
 export const variantList = ["TypeScript", "JavaScript"] as const;
 export const styleSchemeList = ["CSS", "SCSS"] as const;
-export const enhancementList = ["Tailwind CSS v4.0", "Oxfmt", "Oxlint", "Pinia (Persisted)", "Env Config"] as const;
+export const enhancementList = ["Tailwind CSS v4.0", "Oxfmt", "Oxlint", "Pinia (Persisted)", "Env Config", "AI Ready"] as const;
 
 export const variantMap: Record<Variant, string> = {
   TypeScript: "ts",
